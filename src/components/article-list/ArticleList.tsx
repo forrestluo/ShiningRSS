@@ -1,6 +1,8 @@
-import { Star, Check, CheckCheck, Clock, Sparkles, FileText } from "lucide-react";
+import { useRef, useCallback } from "react";
+import { Star, Check, CheckCheck, Clock, Sparkles, FileText, ArrowLeft } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale/zh-CN";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useAppStore } from "../../stores/app-store";
 import type { Article, SidebarItem } from "../../types";
 import TimelineSummary from "../common/TimelineSummary";
@@ -71,8 +73,30 @@ function parseAiLabels(labels: string | null): string[] {
     const parsed = JSON.parse(labels);
     return Array.isArray(parsed) ? parsed : [labels];
   } catch {
-    return labels.split(",").map((s) => s.trim()).filter(Boolean);
+    return labels
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
   }
+}
+
+function HighlightText({ text, query }: { text: string; query: string }) {
+  if (!query.trim()) return <>{text}</>;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parts = text.split(new RegExp(`(${escaped})`, "gi"));
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.toLowerCase() === query.toLowerCase() ? (
+          <mark key={i} className="bg-yellow-200 text-inherit dark:bg-yellow-500/40 rounded-sm px-0.5">
+            {part}
+          </mark>
+        ) : (
+          part
+        )
+      )}
+    </>
+  );
 }
 
 export default function ArticleList() {
@@ -85,7 +109,11 @@ export default function ArticleList() {
     selectedArticle,
     selectArticle,
     markAllRead,
+    setMobileView,
+    searchQuery,
   } = useAppStore();
+
+  const parentRef = useRef<HTMLDivElement>(null);
 
   const viewTitle = getViewTitle(selectedSidebar, feeds, folders);
   const unreadCount = getUnreadCount(
@@ -100,12 +128,30 @@ export default function ArticleList() {
       new Date(b.published_at).getTime() - new Date(a.published_at).getTime()
   );
 
+  const virtualizer = useVirtualizer({
+    count: sortedArticles.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 120,
+    overscan: 5,
+  });
+
+  const handleBack = useCallback(() => {
+    setMobileView("sidebar");
+  }, [setMobileView]);
+
   return (
-    <div className="w-80 min-w-[320px] border-r border-border bg-bg-primary flex flex-col">
+    <div className="flex w-full flex-col border-r border-border bg-bg-primary md:w-80 md:min-w-[320px] lg:w-80 lg:min-w-[320px]">
       {/* Header */}
       <div className="flex-shrink-0 px-4 py-3 border-b border-border">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
+            <button
+              onClick={handleBack}
+              className="md:hidden shrink-0 rounded p-1 text-text-secondary hover:bg-bg-hover hover:text-primary transition-colors"
+              aria-label="返回"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
             <h2 className="font-semibold text-text-primary truncate">
               {viewTitle}
             </h2>
@@ -129,21 +175,39 @@ export default function ArticleList() {
         </div>
       </div>
 
-      {/* Article list */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Article list - virtualized */}
+      <div ref={parentRef} className="flex-1 overflow-y-auto">
         {sortedArticles.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 px-4 text-text-secondary">
             <FileText size={48} className="mb-3 opacity-50" />
             <p className="text-sm">暂无文章</p>
           </div>
         ) : (
-          <ul className="py-2">
-            {sortedArticles.map((article) => {
+          <div
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+              width: "100%",
+              position: "relative",
+            }}
+          >
+            {virtualizer.getVirtualItems().map((virtualItem) => {
+              const article = sortedArticles[virtualItem.index];
               const isSelected = selectedArticle?.id === article.id;
               const aiLabels = parseAiLabels(article.ai_labels);
 
               return (
-                <li key={article.id}>
+                <div
+                  key={article.id}
+                  data-index={virtualItem.index}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualItem.start}px)`,
+                  }}
+                >
                   <button
                     type="button"
                     onClick={() => selectArticle(article)}
@@ -159,36 +223,38 @@ export default function ArticleList() {
                     </div>
 
                     <div className="flex-1 min-w-0">
-                      {/* Feed title */}
                       <p className="text-xs text-text-secondary mb-0.5 truncate">
                         {article.feed_title ?? "未知订阅"}
                       </p>
 
-                      {/* Article title */}
                       <p
                         className={`mb-1 truncate ${
                           article.is_read ? "font-normal" : "font-bold"
                         } text-text-primary`}
                       >
-                        {article.title || "无标题"}
+                        <HighlightText text={article.title || "无标题"} query={searchQuery} />
                       </p>
 
-                      {/* Snippet */}
                       <p className="text-sm text-text-secondary line-clamp-2 mb-1">
-                        {getSnippet(article)}
+                        <HighlightText text={getSnippet(article)} query={searchQuery} />
                       </p>
 
-                      {/* Meta row: time, icons, labels */}
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="flex items-center gap-1 text-xs text-text-tertiary">
                           <Clock size={12} />
-                          {formatDistanceToNow(new Date(article.published_at), {
-                            addSuffix: true,
-                            locale: zhCN,
-                          })}
+                          {formatDistanceToNow(
+                            new Date(article.published_at),
+                            {
+                              addSuffix: true,
+                              locale: zhCN,
+                            }
+                          )}
                         </span>
                         {article.is_read && (
-                          <Check size={14} className="text-success flex-shrink-0" />
+                          <Check
+                            size={14}
+                            className="text-success flex-shrink-0"
+                          />
                         )}
                         {article.is_starred && (
                           <Star
@@ -214,10 +280,10 @@ export default function ArticleList() {
                       </div>
                     </div>
                   </button>
-                </li>
+                </div>
               );
             })}
-          </ul>
+          </div>
         )}
       </div>
     </div>

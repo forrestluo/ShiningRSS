@@ -240,6 +240,72 @@ pub fn generate_opml(feeds: Vec<OpmlFeed>) -> Result<String, String> {
     Ok(opml)
 }
 
+#[tauri::command]
+pub async fn discover_feed(url: String) -> Result<Vec<String>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .user_agent("ShiningRSS/0.1")
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    let mut discovered: Vec<String> = Vec::new();
+
+    let parsed_url =
+        url::Url::parse(&url).map_err(|e| format!("无效的 URL: {}", e))?;
+
+    // Fetch the page HTML and look for <link> tags
+    if let Ok(resp) = client.get(&url).send().await {
+        if let Ok(html) = resp.text().await {
+            let document = scraper::Html::parse_document(&html);
+            let selector = scraper::Selector::parse(
+                r#"link[type="application/rss+xml"], link[type="application/atom+xml"]"#,
+            )
+            .unwrap();
+
+            for element in document.select(&selector) {
+                if let Some(href) = element.value().attr("href") {
+                    let resolved = if href.starts_with("http://") || href.starts_with("https://") {
+                        href.to_string()
+                    } else if let Ok(resolved) = parsed_url.join(href) {
+                        resolved.to_string()
+                    } else {
+                        continue;
+                    };
+                    if !discovered.contains(&resolved) {
+                        discovered.push(resolved);
+                    }
+                }
+            }
+        }
+    }
+
+    // Try common feed paths
+    let base = format!(
+        "{}://{}",
+        parsed_url.scheme(),
+        parsed_url.host_str().unwrap_or("")
+    );
+    let common_paths = ["/feed", "/rss", "/atom.xml", "/feed.xml"];
+
+    for path in &common_paths {
+        let candidate = format!("{}{}", base, path);
+        if discovered.contains(&candidate) {
+            continue;
+        }
+        if let Ok(resp) = client.get(&candidate).send().await {
+            if resp.status().is_success() {
+                if let Ok(body) = resp.bytes().await {
+                    if feed_rs::parser::parse(&body[..]).is_ok() {
+                        discovered.push(candidate);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(discovered)
+}
+
 fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")

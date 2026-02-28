@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { X, Loader2, Rss, Plus } from "lucide-react";
+import { X, Loader2, Rss, Plus, Search } from "lucide-react";
 import { useAppStore } from "../../stores/app-store";
+import { api } from "../../services/tauri-api";
 
 const OPT_NEW_FOLDER = "__new_folder__";
 
@@ -20,6 +21,8 @@ export default function AddFeedDialog() {
   const [newFolderName, setNewFolderName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [discovering, setDiscovering] = useState(false);
+  const [discoveredFeeds, setDiscoveredFeeds] = useState<string[]>([]);
 
   const handleClose = () => {
     setShowAddFeed(false);
@@ -28,6 +31,30 @@ export default function AddFeedDialog() {
     setShowNewFolder(false);
     setNewFolderName("");
     setError(null);
+    setDiscoveredFeeds([]);
+  };
+
+  const handleDiscover = async () => {
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) {
+      setError("请输入网站地址");
+      return;
+    }
+    setDiscovering(true);
+    setError(null);
+    setDiscoveredFeeds([]);
+    try {
+      const feeds = await api.discoverFeed(trimmedUrl);
+      if (feeds.length === 0) {
+        setError("未发现任何 RSS/Atom 订阅源");
+      } else {
+        setDiscoveredFeeds(feeds);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "自动发现失败");
+    } finally {
+      setDiscovering(false);
+    }
   };
 
   const handleSubscribe = async () => {
@@ -101,14 +128,53 @@ export default function AddFeedDialog() {
             <label className="mb-1 block text-sm font-medium text-text-secondary">
               订阅地址
             </label>
-            <input
-              type="url"
-              className="w-full rounded-lg border border-border bg-bg-primary px-3 py-2.5 text-text-primary placeholder:text-text-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              placeholder="输入 RSS 订阅源地址..."
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              disabled={loading}
-            />
+            <div className="flex gap-2">
+              <input
+                type="url"
+                className="flex-1 rounded-lg border border-border bg-bg-primary px-3 py-2.5 text-text-primary placeholder:text-text-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                placeholder="输入 RSS 订阅源地址..."
+                value={url}
+                onChange={(e) => {
+                  setUrl(e.target.value);
+                  setDiscoveredFeeds([]);
+                }}
+                disabled={loading}
+              />
+              <button
+                className="flex items-center gap-1 rounded-lg border border-border px-3 py-2 text-sm text-text-secondary hover:bg-bg-hover hover:text-primary disabled:opacity-60"
+                onClick={handleDiscover}
+                disabled={loading || discovering}
+                title="自动发现"
+              >
+                {discovering ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Search size={16} />
+                )}
+                发现
+              </button>
+            </div>
+
+            {discoveredFeeds.length > 0 && (
+              <div className="mt-2 rounded-lg border border-border">
+                <p className="px-3 py-1.5 text-xs text-text-tertiary">
+                  发现 {discoveredFeeds.length} 个订阅源，点击选择：
+                </p>
+                {discoveredFeeds.map((feedUrl) => (
+                  <button
+                    key={feedUrl}
+                    className={`w-full px-3 py-2 text-left text-sm hover:bg-bg-hover ${
+                      url === feedUrl
+                        ? "bg-primary-light text-primary"
+                        : "text-text-primary"
+                    }`}
+                    onClick={() => setUrl(feedUrl)}
+                  >
+                    {feedUrl}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>

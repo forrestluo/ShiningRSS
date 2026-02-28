@@ -10,6 +10,7 @@ import {
   Tag,
   Copy,
   Check,
+  ArrowLeft,
 } from "lucide-react";
 import { useAppStore } from "../../stores/app-store";
 import { format } from "date-fns";
@@ -31,6 +32,7 @@ export default function ArticleReader() {
     updateArticleAILabels,
     autoSummary,
     aiConfigs,
+    setMobileView,
   } = useAppStore();
 
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -129,6 +131,13 @@ export default function ArticleReader() {
       {/* Header toolbar */}
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setMobileView("list")}
+            className="md:hidden rounded p-1.5 text-text-secondary transition hover:bg-bg-hover hover:text-primary"
+            aria-label="返回列表"
+          >
+            <ArrowLeft className="size-5" />
+          </button>
           <button
             onClick={() => toggleStarred(selectedArticle)}
             className="rounded p-1.5 text-text-secondary transition hover:bg-bg-hover hover:text-primary"
