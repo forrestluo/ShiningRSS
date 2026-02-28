@@ -1,0 +1,34 @@
+[package]
+name = "shining-rss"
+version = "0.1.0"
+description = "ShiningRSS - 现代 AI RSS 阅读器"
+authors = ["ShiningRSS"]
+license = "MIT"
+repository = ""
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.4" }
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+log = "0.4"
+tauri = { version = "2.10.0" }
+tauri-plugin-log = "2"
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+tauri-plugin-http = "2"
+tauri-plugin-store = "2"
+tauri-plugin-shell = "2"
+reqwest = { version = "0.12", features = ["json"] }
+feed-rs = "2.3"
+tokio = { version = "1", features = ["full"] }
+chrono = { version = "0.4", features = ["serde"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
+quick-xml = "0.36"
