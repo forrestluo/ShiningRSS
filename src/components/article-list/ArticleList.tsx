@@ -1,5 +1,5 @@
 import { useRef, useCallback } from "react";
-import { Star, Check, CheckCheck, Clock, Sparkles, FileText, ArrowLeft } from "lucide-react";
+import { Star, Check, CheckCheck, Clock, Sparkles, FileText, ArrowLeft, ArrowUpDown, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale/zh-CN";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -111,6 +111,10 @@ export default function ArticleList() {
     markAllRead,
     setMobileView,
     searchQuery,
+    aiSortEnabled,
+    aiSortedArticleIds,
+    isAISorting,
+    toggleAISort,
   } = useAppStore();
 
   const parentRef = useRef<HTMLDivElement>(null);
@@ -123,10 +127,20 @@ export default function ArticleList() {
     feeds
   );
 
-  const sortedArticles = [...articles].sort(
-    (a, b) =>
-      new Date(b.published_at).getTime() - new Date(a.published_at).getTime()
-  );
+  const sortedArticles = (() => {
+    if (aiSortEnabled && aiSortedArticleIds.length > 0) {
+      const idOrder = new Map(aiSortedArticleIds.map((id, i) => [id, i]));
+      return [...articles].sort((a, b) => {
+        const ai = idOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+        const bi = idOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+        return ai - bi;
+      });
+    }
+    return [...articles].sort(
+      (a, b) =>
+        new Date(b.published_at).getTime() - new Date(a.published_at).getTime()
+    );
+  })();
 
   const virtualizer = useVirtualizer({
     count: sortedArticles.length,
@@ -163,6 +177,24 @@ export default function ArticleList() {
           </div>
           <div className="flex items-center gap-1">
             <TimelineSummary />
+            <button
+              type="button"
+              onClick={() => toggleAISort()}
+              disabled={isAISorting}
+              className={`flex-shrink-0 flex items-center gap-1 px-2 py-1 text-sm rounded transition-colors ${
+                aiSortEnabled
+                  ? "text-primary bg-primary-light"
+                  : "text-text-secondary hover:text-primary hover:bg-bg-hover"
+              }`}
+              title="AI 智能排序"
+            >
+              {isAISorting ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <ArrowUpDown size={14} />
+              )}
+              AI 排序
+            </button>
             <button
               type="button"
               onClick={() => markAllRead()}
