@@ -17,6 +17,7 @@ pub fn run() {
             rss::fetch_feed,
             rss::parse_opml,
             rss::generate_opml,
+            rss::discover_feed,
             db::init_database,
             db::add_folder,
             db::get_folders,

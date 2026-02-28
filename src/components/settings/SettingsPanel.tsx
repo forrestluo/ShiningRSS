@@ -9,15 +9,19 @@ import {
   Save,
   Eye,
   EyeOff,
+  Database,
+  BarChart3,
 } from "lucide-react";
 import { useAppStore } from "../../stores/app-store";
 import { AI_PROVIDERS, type AIConfig } from "../../types";
 import type { Feed } from "../../types";
+import OpmlDialog from "../common/OpmlDialog";
 
 const TABS = [
   { id: "ai", label: "AI 模型", icon: Bot },
   { id: "appearance", label: "外观", icon: Palette },
   { id: "feeds", label: "订阅管理", icon: Rss },
+  { id: "data", label: "数据", icon: Database },
 ] as const;
 
 export default function SettingsPanel() {
@@ -37,6 +41,9 @@ export default function SettingsPanel() {
     feeds,
     deleteFeed,
     updateFeedFolder,
+    aiTokenUsage,
+    refreshInterval,
+    setRefreshInterval,
   } = useAppStore();
 
   const [editingConfig, setEditingConfig] = useState<AIConfig | null>(null);
@@ -139,6 +146,18 @@ export default function SettingsPanel() {
         <main className="flex-1 overflow-y-auto p-6">
           {settingsTab === "ai" && (
             <div className="space-y-6">
+              <div className="flex items-center justify-between rounded-lg border border-border bg-bg-secondary p-3">
+                <div className="flex items-center gap-2 text-sm text-text-secondary">
+                  <BarChart3 size={16} className="text-primary" />
+                  今日 AI 调用次数:
+                  <span className="font-semibold text-text-primary">
+                    {aiTokenUsage.date === new Date().toISOString().slice(0, 10)
+                      ? aiTokenUsage.totalCalls
+                      : 0}
+                  </span>
+                </div>
+              </div>
+
               <h2 className="text-lg font-semibold text-text-primary">AI 模型配置</h2>
 
               {aiConfigs.map((config) => (
@@ -255,6 +274,26 @@ export default function SettingsPanel() {
                   />
                 </button>
               </div>
+
+              <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                <div>
+                  <p className="font-medium text-text-primary">自动刷新间隔</p>
+                  <p className="text-sm text-text-tertiary">
+                    设置自动刷新订阅源的时间间隔（分钟），设为 0 关闭自动刷新
+                  </p>
+                </div>
+                <select
+                  className="rounded-lg border border-border bg-bg-primary px-3 py-2 text-text-primary"
+                  value={refreshInterval}
+                  onChange={(e) => setRefreshInterval(Number(e.target.value))}
+                >
+                  <option value={0}>关闭</option>
+                  <option value={15}>15 分钟</option>
+                  <option value={30}>30 分钟</option>
+                  <option value={60}>60 分钟</option>
+                  <option value={120}>120 分钟</option>
+                </select>
+              </div>
             </div>
           )}
 
@@ -279,6 +318,8 @@ export default function SettingsPanel() {
               </div>
             </div>
           )}
+
+          {settingsTab === "data" && <OpmlDialog />}
         </main>
       </div>
     </div>

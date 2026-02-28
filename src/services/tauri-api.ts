@@ -9,6 +9,7 @@ import type {
   UnreadCount,
   OpmlFeed,
 } from "../types";
+import { mockApi } from "./mock-data";
 
 const IS_TAURI = "__TAURI_INTERNALS__" in window;
 
@@ -19,12 +20,25 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
   throw new Error(`Tauri 命令不可用: ${cmd}`);
 }
 
-export const api = {
+const useMock = !IS_TAURI;
+
+export const api = useMock ? {
+  ...mockApi,
+  parseOpml: (content: string) => mockApi.parseOpml(content),
+  generateOpml: (_feeds: OpmlFeed[]) => mockApi.generateOpml(),
+  discoverFeed: (url: string) => mockApi.discoverFeed(url),
+  addFeed: (title: string, url: string, feedUrl: string, description: string, folderId: string | null) =>
+    mockApi.addFeed(title, url, feedUrl, description, folderId),
+  getArticles: (feedId: string | null, folderId: string | null, starredOnly: boolean, unreadOnly: boolean, limit: number, offset: number) =>
+    mockApi.getArticles(feedId, folderId, starredOnly, unreadOnly, limit, offset),
+  searchArticles: (query: string, _limit: number) => mockApi.searchArticles(query),
+} : {
   initDatabase: () => call<void>("init_database"),
 
   fetchFeed: (url: string) => call<FeedResult>("fetch_feed", { url }),
   parseOpml: (content: string) => call<OpmlFeed[]>("parse_opml", { content }),
   generateOpml: (feeds: OpmlFeed[]) => call<string>("generate_opml", { feeds }),
+  discoverFeed: (url: string) => call<string[]>("discover_feed", { url }),
 
   addFolder: (name: string) => call<Folder>("add_folder", { name }),
   getFolders: () => call<Folder[]>("get_folders"),
@@ -106,4 +120,4 @@ export const api = {
     call<void>("save_settings", { key, value }),
   getSettings: () =>
     call<Array<{ key: string; value: string }>>("get_settings"),
-};
+} as const;

@@ -7,11 +7,21 @@ import SettingsPanel from "./components/settings/SettingsPanel";
 import AddFeedDialog from "./components/common/AddFeedDialog";
 
 function App() {
-  const { initialized, init, showSettings, showAddFeed } = useAppStore();
+  const { initialized, init, showSettings, showAddFeed, refreshInterval, refreshAllFeeds, mobileView } =
+    useAppStore();
 
   useEffect(() => {
     init();
   }, [init]);
+
+  useEffect(() => {
+    if (!initialized || refreshInterval <= 0) return;
+    const ms = refreshInterval * 60 * 1000;
+    const id = setInterval(() => {
+      refreshAllFeeds();
+    }, ms);
+    return () => clearInterval(id);
+  }, [initialized, refreshInterval, refreshAllFeeds]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -89,9 +99,36 @@ function App() {
 
   return (
     <div className="h-full w-full flex bg-bg-primary text-text-primary">
-      <Sidebar />
-      <ArticleList />
-      <ArticleReader />
+      {/* Mobile: show one panel at a time */}
+      <div
+        className={`md:hidden ${mobileView === "sidebar" ? "flex w-full" : "hidden"}`}
+      >
+        <Sidebar />
+      </div>
+      <div
+        className={`md:hidden ${mobileView === "list" ? "flex w-full" : "hidden"}`}
+      >
+        <ArticleList />
+      </div>
+      <div
+        className={`md:hidden ${mobileView === "reader" ? "flex w-full" : "hidden"}`}
+      >
+        <ArticleReader />
+      </div>
+
+      {/* Tablet (md): two-panel layout */}
+      <div className="hidden md:flex lg:hidden h-full w-full">
+        <Sidebar />
+        <ArticleList />
+        <ArticleReader />
+      </div>
+
+      {/* Desktop (lg+): three-panel layout */}
+      <div className="hidden lg:flex h-full w-full">
+        <Sidebar />
+        <ArticleList />
+        <ArticleReader />
+      </div>
 
       {showSettings && <SettingsPanel />}
       {showAddFeed && <AddFeedDialog />}

@@ -10,9 +10,27 @@ import {
   ChevronDown,
   Search,
   BookOpen,
+  GripVertical,
 } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useAppStore } from "../../stores/app-store";
-import type { Feed, SidebarItem } from "../../types";
+import type { Feed, Folder, SidebarItem } from "../../types";
 
 function getUnreadCount(
   unreadCounts: { feed_id: string; count: number }[],
@@ -21,7 +39,7 @@ function getUnreadCount(
   return unreadCounts.find((u) => u.feed_id === feedId)?.count ?? 0;
 }
 
-function isSelected(selected: SidebarItem, item: SidebarItem): boolean {
+function isItemSelected(selected: SidebarItem, item: SidebarItem): boolean {
   if (selected.type !== item.type) return false;
   if (selected.type === "all" && item.type === "all") return true;
   if (selected.type === "starred" && item.type === "starred") return true;
@@ -30,6 +48,116 @@ function isSelected(selected: SidebarItem, item: SidebarItem): boolean {
   if (selected.type === "feed" && item.type === "feed")
     return selected.id === item.id;
   return false;
+}
+
+function SortableFolder({
+  folder,
+  children,
+  isExpanded,
+  folderUnread,
+  onToggle,
+}: {
+  folder: Folder;
+  children: React.ReactNode;
+  isExpanded: boolean;
+  folderUnread: number;
+  onToggle: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition } =
+    useSortable({ id: folder.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="space-y-0.5">
+      <div className="flex items-center">
+        <button
+          {...attributes}
+          {...listeners}
+          className="shrink-0 cursor-grab p-1 text-text-tertiary hover:text-text-secondary active:cursor-grabbing"
+          aria-label="拖拽排序"
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </button>
+        <button
+          onClick={onToggle}
+          className="flex flex-1 items-center justify-between gap-2 rounded-md px-2 py-2 text-left text-sm text-text-primary transition-colors hover:bg-bg-hover dark:hover:bg-bg-hover"
+        >
+          <span className="flex items-center gap-2">
+            {isExpanded ? (
+              <ChevronDown className="h-4 w-4 shrink-0" />
+            ) : (
+              <ChevronRight className="h-4 w-4 shrink-0" />
+            )}
+            <span className="truncate">{folder.name}</span>
+          </span>
+          {folderUnread > 0 && (
+            <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-white">
+              {folderUnread > 99 ? "99+" : folderUnread}
+            </span>
+          )}
+        </button>
+      </div>
+      {isExpanded && children}
+    </div>
+  );
+}
+
+function SortableFeedItem({
+  feed,
+  count,
+  selected,
+  onClick,
+  indented,
+}: {
+  feed: Feed;
+  count: number;
+  selected: boolean;
+  onClick: () => void;
+  indented?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition } =
+    useSortable({ id: feed.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center ${indented ? "ml-5" : ""}`}
+    >
+      <button
+        {...attributes}
+        {...listeners}
+        className="shrink-0 cursor-grab p-1 text-text-tertiary hover:text-text-secondary active:cursor-grabbing"
+        aria-label="拖拽排序"
+      >
+        <GripVertical className="h-3.5 w-3.5" />
+      </button>
+      <button
+        onClick={onClick}
+        className={`flex flex-1 items-center justify-between gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-bg-hover dark:hover:bg-bg-hover ${
+          selected
+            ? "bg-sidebar-active text-primary dark:bg-sidebar-active dark:text-primary"
+            : "text-text-primary"
+        }`}
+      >
+        <span className="truncate">{feed.title}</span>
+        {count > 0 && (
+          <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-white">
+            {count > 99 ? "99+" : count}
+          </span>
+        )}
+      </button>
+    </div>
+  );
 }
 
 export default function Sidebar() {
@@ -46,11 +174,22 @@ export default function Sidebar() {
     searchQuery,
     setSearchQuery,
     searchArticles,
+    reorderFolders,
+    reorderFeeds,
   } = useAppStore();
 
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
+    new Set()
+  );
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFirstMountRef = useRef(true);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   const totalUnread = unreadCounts.reduce((sum, u) => sum + u.count, 0);
   const feedsInFolders = new Map<string, Feed[]>();
@@ -95,8 +234,32 @@ export default function Sidebar() {
     }
   };
 
+  const handleFolderDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = folders.findIndex((f) => f.id === active.id);
+    const newIndex = folders.findIndex((f) => f.id === over.id);
+    if (oldIndex !== -1 && newIndex !== -1) {
+      reorderFolders(oldIndex, newIndex);
+    }
+  };
+
+  const handleFeedDragEnd = (
+    feedList: Feed[],
+    event: DragEndEvent
+  ) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = feedList.findIndex((f) => f.id === active.id);
+    const newIndex = feedList.findIndex((f) => f.id === over.id);
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const reordered = arrayMove(feedList, oldIndex, newIndex);
+      reorderFeeds(reordered.map((f) => f.id));
+    }
+  };
+
   return (
-    <aside className="flex h-full w-64 min-w-[256px] flex-col border-r border-border bg-sidebar-bg dark:bg-sidebar-bg">
+    <aside className="flex h-full w-full flex-col border-r border-border bg-sidebar-bg dark:bg-sidebar-bg md:w-64 md:min-w-[256px] lg:w-64 lg:min-w-[256px]">
       {/* App title */}
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
         <Rss className="h-5 w-5 shrink-0 text-primary" />
@@ -126,7 +289,7 @@ export default function Sidebar() {
           <button
             onClick={() => setSelectedSidebar({ type: "all" })}
             className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-bg-hover dark:hover:bg-bg-hover ${
-              isSelected(selectedSidebar, { type: "all" })
+              isItemSelected(selectedSidebar, { type: "all" })
                 ? "bg-sidebar-active text-primary dark:bg-sidebar-active dark:text-primary"
                 : "text-text-primary"
             }`}
@@ -145,7 +308,7 @@ export default function Sidebar() {
           <button
             onClick={() => setSelectedSidebar({ type: "starred" })}
             className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-bg-hover dark:hover:bg-bg-hover ${
-              isSelected(selectedSidebar, { type: "starred" })
+              isItemSelected(selectedSidebar, { type: "starred" })
                 ? "bg-sidebar-active text-primary dark:bg-sidebar-active dark:text-primary"
                 : "text-text-primary"
             }`}
@@ -155,113 +318,122 @@ export default function Sidebar() {
           </button>
         </div>
 
-        {/* Folders */}
+        {/* Folders - Drag sortable */}
         {folders.length > 0 && (
           <div className="mt-4 px-2">
             <div className="mb-1 flex items-center gap-1 px-3 py-1 text-xs font-medium uppercase tracking-wider text-text-tertiary">
               <FolderOpen className="h-3.5 w-3.5" />
               文件夹
             </div>
-            <div className="space-y-0.5">
-              {folders.map((folder) => {
-                const folderFeeds = feedsInFolders.get(folder.id) ?? [];
-                const isExpanded = expandedFolders.has(folder.id);
-                const folderUnread = folderFeeds.reduce(
-                  (sum, f) => sum + getUnreadCount(unreadCounts, f.id),
-                  0
-                );
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleFolderDragEnd}
+            >
+              <SortableContext
+                items={folders.map((f) => f.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-0.5">
+                  {folders.map((folder) => {
+                    const folderFeeds = feedsInFolders.get(folder.id) ?? [];
+                    const isExpanded = expandedFolders.has(folder.id);
+                    const folderUnread = folderFeeds.reduce(
+                      (sum, f) => sum + getUnreadCount(unreadCounts, f.id),
+                      0
+                    );
 
-                return (
-                  <div key={folder.id} className="space-y-0.5">
-                    <button
-                      onClick={() => toggleFolder(folder.id)}
-                      className="flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm text-text-primary transition-colors hover:bg-bg-hover dark:hover:bg-bg-hover"
-                    >
-                      <span className="flex items-center gap-2">
-                        {isExpanded ? (
-                          <ChevronDown className="h-4 w-4 shrink-0" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4 shrink-0" />
-                        )}
-                        <span className="truncate">{folder.name}</span>
-                      </span>
-                      {folderUnread > 0 && (
-                        <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-white">
-                          {folderUnread > 99 ? "99+" : folderUnread}
-                        </span>
-                      )}
-                    </button>
-                    {isExpanded &&
-                      folderFeeds.map((feed) => {
-                        const count = getUnreadCount(unreadCounts, feed.id);
-                        const selected = isSelected(selectedSidebar, {
-                          type: "feed",
-                          id: feed.id,
-                        });
-                        return (
-                          <button
-                            key={feed.id}
-                            onClick={() =>
-                              setSelectedSidebar({ type: "feed", id: feed.id })
-                            }
-                            className={`ml-6 flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-bg-hover dark:hover:bg-bg-hover ${
-                              selected
-                                ? "bg-sidebar-active text-primary dark:bg-sidebar-active dark:text-primary"
-                                : "text-text-primary"
-                            }`}
+                    return (
+                      <SortableFolder
+                        key={folder.id}
+                        folder={folder}
+                        isExpanded={isExpanded}
+                        folderUnread={folderUnread}
+                        onToggle={() => toggleFolder(folder.id)}
+                      >
+                        <DndContext
+                          sensors={sensors}
+                          collisionDetection={closestCenter}
+                          onDragEnd={(e) => handleFeedDragEnd(folderFeeds, e)}
+                        >
+                          <SortableContext
+                            items={folderFeeds.map((f) => f.id)}
+                            strategy={verticalListSortingStrategy}
                           >
-                            <span className="truncate">{feed.title}</span>
-                            {count > 0 && (
-                              <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-white">
-                                {count > 99 ? "99+" : count}
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                  </div>
-                );
-              })}
-            </div>
+                            {folderFeeds.map((feed) => {
+                              const count = getUnreadCount(
+                                unreadCounts,
+                                feed.id
+                              );
+                              const selected = isItemSelected(selectedSidebar, {
+                                type: "feed",
+                                id: feed.id,
+                              });
+                              return (
+                                <SortableFeedItem
+                                  key={feed.id}
+                                  feed={feed}
+                                  count={count}
+                                  selected={selected}
+                                  indented
+                                  onClick={() =>
+                                    setSelectedSidebar({
+                                      type: "feed",
+                                      id: feed.id,
+                                    })
+                                  }
+                                />
+                              );
+                            })}
+                          </SortableContext>
+                        </DndContext>
+                      </SortableFolder>
+                    );
+                  })}
+                </div>
+              </SortableContext>
+            </DndContext>
           </div>
         )}
 
-        {/* Feeds without folder */}
+        {/* Feeds without folder - Drag sortable */}
         {feedsWithoutFolder.length > 0 && (
           <div className="mt-4 px-2">
             <div className="mb-1 flex items-center gap-1 px-3 py-1 text-xs font-medium uppercase tracking-wider text-text-tertiary">
               <Rss className="h-3.5 w-3.5" />
               订阅源
             </div>
-            <div className="space-y-0.5">
-              {feedsWithoutFolder.map((feed) => {
-                const count = getUnreadCount(unreadCounts, feed.id);
-                const selected = isSelected(selectedSidebar, {
-                  type: "feed",
-                  id: feed.id,
-                });
-                return (
-                  <button
-                    key={feed.id}
-                    onClick={() =>
-                      setSelectedSidebar({ type: "feed", id: feed.id })
-                    }
-                    className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-bg-hover dark:hover:bg-bg-hover ${
-                      selected
-                        ? "bg-sidebar-active text-primary dark:bg-sidebar-active dark:text-primary"
-                        : "text-text-primary"
-                    }`}
-                  >
-                    <span className="truncate">{feed.title}</span>
-                    {count > 0 && (
-                      <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-white">
-                        {count > 99 ? "99+" : count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={(e) => handleFeedDragEnd(feedsWithoutFolder, e)}
+            >
+              <SortableContext
+                items={feedsWithoutFolder.map((f) => f.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-0.5">
+                  {feedsWithoutFolder.map((feed) => {
+                    const count = getUnreadCount(unreadCounts, feed.id);
+                    const selected = isItemSelected(selectedSidebar, {
+                      type: "feed",
+                      id: feed.id,
+                    });
+                    return (
+                      <SortableFeedItem
+                        key={feed.id}
+                        feed={feed}
+                        count={count}
+                        selected={selected}
+                        onClick={() =>
+                          setSelectedSidebar({ type: "feed", id: feed.id })
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              </SortableContext>
+            </DndContext>
           </div>
         )}
       </nav>
