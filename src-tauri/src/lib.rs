@@ -1,18 +1,14 @@
-mod rss;
 mod db;
-
-use db::Database;
-use std::sync::Arc;
-use tokio::sync::Mutex;
-
-pub struct AppState {
-    pub db: Arc<Mutex<Database>>,
-}
+mod rss;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())
+        .plugin(
+            tauri_plugin_log::Builder::default()
+                .level(log::LevelFilter::Info)
+                .build(),
+        )
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_store::Builder::default().build())

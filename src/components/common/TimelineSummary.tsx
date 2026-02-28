@@ -49,11 +49,12 @@ export default function TimelineSummary() {
   return (
     <>
       <button
-        className="flex items-center gap-2 rounded-lg border border-border bg-bg-primary px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover"
+        className="flex items-center gap-1 rounded px-2 py-1 text-sm text-text-secondary transition-colors hover:text-primary hover:bg-bg-hover"
         onClick={handleClick}
+        title="AI 时间线总结"
       >
-        <Sparkles size={18} className="text-primary" />
-        AI 时间线总结
+        <Sparkles size={14} className="text-accent" />
+        总结
       </button>
 
       {open && (

@@ -3,6 +3,7 @@ import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale/zh-CN";
 import { useAppStore } from "../../stores/app-store";
 import type { Article, SidebarItem } from "../../types";
+import TimelineSummary from "../common/TimelineSummary";
 
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
@@ -114,14 +115,17 @@ export default function ArticleList() {
               </span>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => markAllRead()}
-            className="flex-shrink-0 flex items-center gap-1 px-2 py-1 text-sm text-text-secondary hover:text-primary hover:bg-bg-hover rounded transition-colors"
-          >
-            <CheckCheck size={14} />
-            全部标为已读
-          </button>
+          <div className="flex items-center gap-1">
+            <TimelineSummary />
+            <button
+              type="button"
+              onClick={() => markAllRead()}
+              className="flex-shrink-0 flex items-center gap-1 px-2 py-1 text-sm text-text-secondary hover:text-primary hover:bg-bg-hover rounded transition-colors"
+            >
+              <CheckCheck size={14} />
+              已读
+            </button>
+          </div>
         </div>
       </div>
 
